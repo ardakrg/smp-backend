@@ -1,15 +1,23 @@
-# SMP Backend
+# SMP Web App — Backend
 
-This repo is the **backend** of the SMP Web App.  
-Built with **Node.js**, **Express**, **TypeScript**, **Prisma**, and **PostgreSQL**.
+RESTful API backend for the SMP Web App, developed for [Saturday Morning Physics](https://www.iap.tu-darmstadt.de/smp/saturday_morning_physics/index.de.jsp) at TU Darmstadt. Built as part of the Software Development Project course (2025) in a team of 5.
 
-# How to Set Up:
+## Features
 
-1. Go to project folder in Terminal
-2. Run "npm install" to install required packages
-3. Make sure PostgreSQL is installed in your system and run "createdb smp_dev" to create the database
-4. Copy the example environment file by running "cp .env.example .env"
-5. Edit inside .env: "DB_USER=DB_USER_NAME" and "DATABASE_URL="postgresql://DB_USER_NAME@localhost:5432/smp_dev?schema=public"
-6. Run prisma migrations: "npx prisma migrate dev"
-7. Start the development server: "npm run dev"
-8. Backend will run at http://localhost:3000
+- JWT authentication and role-based authorization (Organizer, Participant, HiWi)
+- QR code-based attendance validation
+- Event lifecycle management with registration approval workflows
+- RESTful API for session management, registrations, and attendance tracking
+- Dockerized and deployed on a remote server with Nginx
+
+## Tech Stack
+
+Node.js · Express · TypeScript · Prisma · PostgreSQL · Docker · Nginx
+
+## Setup
+
+1. `npm install`
+2. `cp .env.example .env` — fill in your DB credentials
+3. `createdb smp_dev`
+4. `npx prisma migrate dev`
+5. `npm run dev` → runs on http://localhost:3000
