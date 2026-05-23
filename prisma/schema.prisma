@@ -1,0 +1,363 @@
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserRole {
+  ORGANIZER
+  PARTICIPANT
+  HIWI
+}
+
+enum ParticipantType {
+  STUDENT
+  TEACHER
+  GUEST
+}
+
+enum AttendanceSource {
+  ONSITE //Hörsaal
+  ONLINE //Zoom
+}
+
+enum AnnouncementVisibility {
+  ORGA_ONLY
+  HIWI_ORGA
+  PUBLIC
+}
+
+enum HiwiAvailabilityStatus {
+  AVAILABLE
+  MAYBE
+  UNAVAILABLE
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  Int              @id @default(autoincrement())
+  name                String
+  email               String           @unique
+  passwordHash        String
+  role                UserRole         @default(PARTICIPANT)
+  participantType     ParticipantType? // Only for PARTICIPANT role
+  createdAt           DateTime         @default(now())
+  registrationId      Int?             @unique
+  registration        Registration?    @relation(fields: [registrationId], references: [id])
+  hiwi                HiWi?
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
+  qrId                String?          @unique
+  attendances         Attendance[]
+
+  staffAnnouncements StaffAnnouncement[]
+  comments           AnnouncementComment[]
+
+  fermiResponses FermiResponse[]
+
+  diplomas Diploma[]
+}
+
+model Registration {
+  id Int @id @default(autoincrement())
+
+  salutation String
+  firstName  String
+  lastName   String
+
+  email        String @unique
+  confirmEmail String
+
+  street       String
+  addressExtra String?
+  zipCode      String
+  city         String
+
+  school String
+  grade  String
+
+  motivation String?
+  comments   String?
+
+  createdAt DateTime           @default(now())
+  status    RegistrationStatus @default(PENDING)
+
+  eventId Int
+  event   Event @relation(fields: [eventId], references: [id])
+
+
+  user User?
+}
+
+//Events are yearly organisations, e.g. SMP2024, SMP2025 etc.
+model Event {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  isActive    Boolean   @default(true)
+  registrationClosesAt DateTime?
+
+  sessions Session[]
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  staffAnnouncements StaffAnnouncement[]
+
+  diplomas         Diploma[]
+  // Diploma configuration (per event/year)
+  diplomaSigner1Name         String?
+  diplomaSigner1Role         String?
+  diplomaSigner1SignatureUrl String?
+  diplomaSigner2Name         String?
+  diplomaSigner2Role         String?
+  diplomaSigner2SignatureUrl String?
+  diplomaLocation            String?  @default("Darmstadt")
+
+  // Approval e-mail configuration (per event/year)
+  approvalEmailSubject String?
+  approvalEmailIntro   String?
+
+  registrations Registration[]
+
+  @@map("events")
+}
+
+//Sessions are days in an event, e.g. day1 of SMP2025
+model Session {
+  id Int @id @default(autoincrement())
+
+  eventId Int
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  location    String?
+  startsAt    DateTime
+  endsAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hiwis HiWiSession[]
+
+  attendances Attendance[]
+
+  staffAnnouncements StaffAnnouncement[]
+  fermiQuiz          FermiQuiz?
+
+  zoomUnmatchedParticipants ZoomUnmatchedParticipant[]
+
+  @@index([eventId])
+  @@index([startsAt])
+  @@map("sessions")
+}
+
+model HiWi {
+  id                 Int           @id @default(autoincrement())
+  userId             Int           @unique
+  user               User          @relation(fields: [userId], references: [id])
+  hiwiSessions       HiWiSession[]
+  clothingSize       String?
+  scannedAttendances Attendance[]
+}
+
+model HiWiSession {
+  id Int @id @default(autoincrement())
+
+  hiwiId Int
+  hiwi   HiWi @relation(fields: [hiwiId], references: [id], onDelete: Cascade)
+
+  sessionId Int
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  status    HiwiAvailabilityStatus?
+
+  @@unique([hiwiId, sessionId])
+  @@index([sessionId])
+  @@map("hiwi_sessions")
+}
+
+model Attendance {
+  id Int @id @default(autoincrement())
+
+  participantId Int
+  participant   User @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  sessionId Int
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  scannedByHiwiId Int?
+  scannedByHiwi   HiWi? @relation(fields: [scannedByHiwiId], references: [id])
+
+  scannedAt DateTime @default(now())
+
+  source          AttendanceSource @default(ONSITE)
+  zoomDisplayName String?
+  zoomEmail       String?
+  zoomJoinTime    DateTime?
+  zoomLeaveTime   DateTime?
+  zoomDurationMin Int?
+
+  @@unique([participantId, sessionId])
+  @@index([sessionId])
+  @@index([participantId])
+  @@map("attendances")
+}
+
+model StaffAnnouncement {
+  id    Int     @id @default(autoincrement())
+  title String?
+  body  String
+
+  authorId Int
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  eventId Int?
+  event   Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  sessionId Int?
+  session   Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  attachments AnnouncementAttachment[]
+
+  visibility AnnouncementVisibility @default(HIWI_ORGA)
+
+  comments AnnouncementComment[]
+
+  @@index([eventId])
+  @@index([sessionId])
+  @@map("staff_announcements")
+}
+
+model AnnouncementAttachment {
+  id             Int               @id @default(autoincrement())
+  announcementId Int
+  announcement   StaffAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  url       String
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  @@index([announcementId])
+  @@map("announcement_attachments")
+}
+
+model AnnouncementComment {
+  id Int @id @default(autoincrement())
+
+  announcementId Int
+  announcement   StaffAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  authorId Int
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([announcementId])
+  @@index([authorId])
+  @@map("announcement_comments")
+}
+
+model ZoomUnmatchedParticipant {
+  id Int @id @default(autoincrement())
+
+  sessionId Int
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  displayName String
+  email       String?
+  durationMin Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("zoom_unmatched_participants")
+}
+
+model FermiQuestion {
+  id             Int      @id @default(autoincrement())
+  text           String   @db.Text
+  correctAnswer  Int?
+  correctAnswer2 Int?
+  createdAt      DateTime @default(now())
+
+  quizQuestions FermiQuizQuestion[]
+
+  @@map("fermi_questions")
+}
+
+model FermiQuiz {
+  id                   Int       @id @default(autoincrement())
+  sessionId            Int       @unique
+  session              Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt            DateTime  @default(now())
+  timerStartedAt       DateTime?
+  timerDurationMinutes Int?
+
+  questions FermiQuizQuestion[]
+  responses FermiResponse[]
+
+  @@map("fermi_quizzes")
+}
+
+model FermiQuizQuestion {
+  id         Int           @id @default(autoincrement())
+  quizId     Int
+  quiz       FermiQuiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  questionId Int
+  question   FermiQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  order      Int
+
+  @@unique([quizId, order])
+  @@unique([quizId, questionId])
+  @@index([quizId])
+  @@map("fermi_quiz_questions")
+}
+
+model FermiResponse {
+  id            Int       @id @default(autoincrement())
+  participantId Int
+  participant   User      @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  quizId        Int
+  quiz          FermiQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers       Json
+  submittedAt   DateTime  @default(now())
+
+  @@unique([participantId, quizId])
+  @@index([quizId])
+  @@map("fermi_responses")
+}
+
+model Diploma {
+  id                Int      @id @default(autoincrement())
+  
+  participantId     Int
+  participant       User     @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  
+  eventId           Int
+  event             Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  certificateNumber String   @unique
+  issuedAt          DateTime @default(now())
+  createdAt         DateTime @default(now())
+  
+  @@unique([participantId, eventId])
+  @@index([eventId])
+  @@index([participantId])
+  @@map("diplomas")
+}

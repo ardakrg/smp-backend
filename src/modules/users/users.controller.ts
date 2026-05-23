@@ -1,0 +1,137 @@
+import { Response } from "express";
+import { AuthRequest } from "../../middleware/auth";
+import { UserRole } from "@prisma/client";
+import { usersService } from "./users.service";
+
+export const usersController = {
+  async details(req: AuthRequest, res: Response) {
+    const auth = req.auth;
+    if (!auth) return res.status(401).json({ error: "UNAUTHORIZED" });
+
+    const details = await usersService.getDetails(auth.userId);
+    return res.json(details) // RegId, Salutation, Name, Email, Adress, School, Grade
+  },
+
+  async update(req: AuthRequest, res: Response) {
+    const auth = req.auth;
+    if (!auth) return res.status(401).json({ error: "UNAUTHORIZED" });
+
+    try {
+      const {
+        salutation,
+        firstName,
+        lastName,
+        street,
+        addressExtra,
+        zipCode,
+        city,
+      } = req.body;
+
+      if (
+        !salutation ||
+        !firstName ||
+        !lastName ||
+        !street ||
+        !zipCode ||
+        !city
+      ) {
+        return res.status(400).json({ error: "Missing required fields"});
+      }
+
+      const update = await usersService.updateDetails(auth.userId, {
+        salutation,
+        firstName,
+        lastName,
+        street,
+        addressExtra,
+        zipCode,
+        city,
+      });
+      return res.status(200).json(update);
+    } catch (err: any) {
+      console.error("Error occured while updating user details: ", err);
+      return res.status(500).json("Internal server error");
+    }
+  },
+
+  async me(req: AuthRequest, res: Response) {
+      const auth = req.auth;
+      if (!auth) return res.status(401).json({ error: "UNAUTHORIZED" });
+
+      const me = await usersService.getMe(auth.userId);
+      return res.json(me); // { id, name, email, role, participantType }
+    },
+
+  async updateParticipantType(req: AuthRequest, res: Response) {
+    const auth = req.auth;
+    if (!auth) return res.status(401).json({ error: "UNAUTHORIZED" });
+
+    const { participantType } = req.body;
+    if (!participantType) {
+      return res.status(400).json({ error: "PARTICIPANT_TYPE_REQUIRED" });
+    }
+
+    try {
+      const updated = await usersService.updateParticipantType(auth.userId, participantType);
+      return res.json(updated);
+    } catch (e: any) {
+      const status = e?.status ?? 500;
+      return res.status(status).json({ error: e?.message ?? "INTERNAL_ERROR" });
+    }
+  },
+
+  async getQrCodePng(req: AuthRequest, res: Response) {
+    const requestedId = Number(req.params.id);
+
+    if (Number.isNaN(requestedId)) {
+      return res.status(400).json({ error: "INVALID_USER_ID" });
+    }
+
+    if (!req.auth) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+
+    if (req.auth.role === UserRole.PARTICIPANT && req.auth.userId !== requestedId) {
+      return res.status(403).json({ error: "FORBIDDEN" });
+    }
+
+    try {
+      const { png, fileName } = await usersService.getQrCodePngByUserId(requestedId);
+
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+      return res.status(200).send(png);
+    } catch (e: any) {
+      const status = e?.status ?? 500;
+      return res.status(status).json({ error: e?.message ?? "INTERNAL_ERROR" });
+    }
+  },
+
+  async getBusinessCardPdf(req: AuthRequest, res: Response) {
+    const requestedId = Number(req.params.id);
+    if (Number.isNaN(requestedId)) {
+      return res.status(400).json({ error: "INVALID_USER_ID" });
+    }
+
+    const auth = (req as any).auth;
+    if (!auth) return res.status(401).json({ error: "UNAUTHORIZED" });
+
+    // PARTICIPANT can access only its own pdf
+    if (auth.role === UserRole.PARTICIPANT && auth.userId !== requestedId) {
+      return res.status(403).json({ error: "FORBIDDEN" });
+    }
+
+    // HIWI cant access pdf
+    if (auth.role === UserRole.HIWI) {
+      return res.status(403).json({ error: "FORBIDDEN" });
+    }
+
+    // ORGANIZER can access all pdfs
+    const { pdf, fileName } =
+      await usersService.generateBusinessCardPdf(requestedId);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    return res.status(200).send(pdf);
+  },
+};
